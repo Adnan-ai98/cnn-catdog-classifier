@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PawScan — Instant Species Scan</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #12171B;
+    --panel: #1B2229;
+    --panel-line: #313A42;
+    --paper: #F3EEE2;
+    --paper-line: #D9D0BC;
+    --amber: #F2A93B;
+    --teal: #3FB8A6;
+    --coral: #E85A3D;
+    --text-soft: #A9B2B9;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--ink);
+    color: #EDEFF0;
+    font-family: 'Inter', sans-serif;
+    min-height: 100vh;
+  }
+
+  /* faint scanline texture across the whole page */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background: repeating-linear-gradient(
+      0deg, rgba(255,255,255,0.012) 0px, rgba(255,255,255,0.012) 1px,
+      transparent 1px, transparent 3px
+    );
+    z-index: 1;
+  }
+
+  .wrap {
+    max-width: 1040px;
+    margin: 0 auto;
+    padding: 48px 24px 80px;
+    position: relative;
+    z-index: 2;
+  }
+
+  header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 44px;
+    border-bottom: 1px solid var(--panel-line);
+    padding-bottom: 24px;
+  }
+
+  .wordmark {
+    font-family: 'Fraunces', serif;
+    font-weight: 700;
+    font-size: 34px;
+    letter-spacing: -0.01em;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .wordmark .paw {
+    color: var(--amber);
+    font-size: 28px;
+  }
+
+  .tagline {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-soft);
+  }
+
+  .status-pill {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    padding: 5px 10px;
+    border-radius: 100px;
+    border: 1px solid var(--panel-line);
+    color: var(--text-soft);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .status-pill .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--teal);
+  }
+
+  .status-pill.error .dot { background: var(--coral); }
+
+  main {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 28px;
+  }
+
+  @media (max-width: 760px) {
+    main { grid-template-columns: 1fr; }
+  }
+
+  /* ---------- Scanner panel ---------- */
+  .scanner-panel {
+    background: var(--panel);
+    border: 1px solid var(--panel-line);
+    border-radius: 14px;
+    padding: 22px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .panel-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-soft);
+    margin-bottom: 16px;
+  }
+
+  .dropzone {
+    flex: 1;
+    min-height: 320px;
+    border: 1.5px dashed var(--panel-line);
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+    transition: border-color 0.2s ease, background 0.2s ease;
+    background: rgba(255,255,255,0.015);
+  }
+
+  .dropzone:hover, .dropzone.dragover {
+    border-color: var(--amber);
+    background: rgba(242,169,59,0.05);
+  }
+
+  .dropzone-empty {
+    padding: 24px;
+  }
+
+  .dropzone-empty .icon {
+    font-size: 30px;
+    margin-bottom: 10px;
+    opacity: 0.7;
+  }
+
+  .dropzone-empty p {
+    margin: 4px 0;
+    color: var(--text-soft);
+    font-size: 13.5px;
+  }
+
+  .dropzone-empty .browse {
+    color: var(--amber);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+
+  .preview-wrap {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    display: none;
+  }
+
+  .preview-wrap.active { display: block; }
+
+  .preview-wrap img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  .scanline {
+    position: absolute;
+    left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--amber), transparent);
+    box-shadow: 0 0 12px 2px var(--amber);
+    top: 0;
+    opacity: 0;
+  }
+
+  .scanline.active {
+    opacity: 1;
+    animation: sweep 1.4s ease-in-out infinite;
+  }
+
+  @keyframes sweep {
+    0%   { top: 2%; }
+    50%  { top: 96%; }
+    100% { top: 2%; }
+  }
+
+  .corner-marks span {
+    position: absolute;
+    width: 16px; height: 16px;
+    border: 2px solid var(--amber);
+    opacity: 0.85;
+  }
+  .corner-marks .tl { top: 8px; left: 8px; border-right: none; border-bottom: none; }
+  .corner-marks .tr { top: 8px; right: 8px; border-left: none; border-bottom: none; }
+  .corner-marks .bl { bottom: 8px; left: 8px; border-right: none; border-top: none; }
+  .corner-marks .br { bottom: 8px; right: 8px; border-left: none; border-top: none; }
+
+  input[type="file"] { display: none; }
+
+  .rescan-btn {
+    margin-top: 14px;
+    background: transparent;
+    border: 1px solid var(--panel-line);
+    color: var(--text-soft);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11.5px;
+    letter-spacing: 0.05em;
+    padding: 10px 14px;
+    border-radius: 8px;
+    cursor: pointer;
+    text-transform: uppercase;
+    transition: border-color 0.2s ease, color 0.2s ease;
+  }
+  .rescan-btn:hover { border-color: var(--amber); color: var(--amber); }
+  .rescan-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* ---------- Report ticket panel ---------- */
+  .ticket-panel {
+    background: var(--panel);
+    border: 1px solid var(--panel-line);
+    border-radius: 14px;
+    padding: 22px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .ticket {
+    flex: 1;
+    background: var(--paper);
+    color: #22201B;
+    border-radius: 8px;
+    padding: 26px 22px;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-height: 320px;
+  }
+
+  .ticket-empty {
+    text-align: center;
+    color: #77705F;
+  }
+
+  .ticket-empty .icon {
+    font-size: 26px;
+    margin-bottom: 10px;
+  }
+
+  .ticket-empty p {
+    font-size: 13.5px;
+    margin: 0;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  .ticket-result { display: none; }
+  .ticket-result.active { display: block; }
+
+  .ticket-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    border-bottom: 1px dashed var(--paper-line);
+    padding-bottom: 14px;
+    margin-bottom: 16px;
+  }
+
+  .ticket-head .id {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px;
+    color: #8A8270;
+    letter-spacing: 0.04em;
+  }
+
+  .species-tag {
+    font-family: 'Fraunces', serif;
+    font-weight: 700;
+    font-size: 32px;
+    letter-spacing: -0.01em;
+  }
+
+  .species-tag.cat { color: #1E7A6C; }
+  .species-tag.dog { color: #C24A2E; }
+
+  .confidence-row {
+    margin: 6px 0 20px;
+  }
+
+  .confidence-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #77705F;
+    margin-bottom: 8px;
+    display: flex;
+    justify-content: space-between;
+  }
+
+  .meter {
+    height: 8px;
+    background: #E4DCC8;
+    border-radius: 100px;
+    overflow: hidden;
+  }
+
+  .meter-fill {
+    height: 100%;
+    border-radius: 100px;
+    width: 0%;
+    transition: width 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .split-row {
+    display: flex;
+    gap: 18px;
+    margin-bottom: 18px;
+  }
+
+  .split-item { flex: 1; }
+
+  .split-item .k {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #8A8270;
+    margin-bottom: 4px;
+  }
+
+  .split-item .v {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 18px;
+    font-weight: 700;
+  }
+
+  .ticket-footer {
+    border-top: 1px dashed var(--paper-line);
+    padding-top: 12px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px;
+    color: #8A8270;
+    display: flex;
+    justify-content: space-between;
+  }
+
+  .perf {
+    position: absolute;
+    top: 0; bottom: 0;
+    width: 0;
+  }
+
+  footer {
+    margin-top: 36px;
+    text-align: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--text-soft);
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div>
+      <div class="wordmark"><span class="paw">🐾</span>PawScan</div>
+      <div class="tagline">Instant species scan · from-scratch CNN</div>
+    </div>
+    {% if model_ready %}
+    <div class="status-pill"><span class="dot"></span>Model loaded &amp; ready</div>
+    {% else %}
+    <div class="status-pill error"><span class="dot"></span>Model failed to load</div>
+    {% endif %}
+  </header>
+
+  <main>
+    <div class="scanner-panel">
+      <div class="panel-label">01 — Upload specimen</div>
+
+      <div class="dropzone" id="dropzone">
+        <div class="dropzone-empty" id="dropzoneEmpty">
+          <div class="icon">📷</div>
+          <p>Drop a photo of a cat or dog here</p>
+          <p>or <span class="browse">browse a file</span></p>
+        </div>
+
+        <div class="preview-wrap" id="previewWrap">
+          <img id="previewImg" src="" alt="Uploaded specimen">
+          <div class="scanline" id="scanline"></div>
+          <div class="corner-marks">
+            <span class="tl"></span><span class="tr"></span>
+            <span class="bl"></span><span class="br"></span>
+          </div>
+        </div>
+
+        <input type="file" id="fileInput" accept="image/*">
+      </div>
+
+      <button class="rescan-btn" id="rescanBtn" style="display:none;">↺ Scan a different photo</button>
+    </div>
+
+    <div class="ticket-panel">
+      <div class="panel-label">02 — Scan report</div>
+
+      <div class="ticket">
+        <div class="ticket-empty" id="ticketEmpty">
+          <div class="icon">🧾</div>
+          <p>Report will appear here<br>once a photo is scanned</p>
+        </div>
+
+        <div class="ticket-result" id="ticketResult">
+          <div class="ticket-head">
+            <div>
+              <div class="id" id="ticketId">SCAN #000000</div>
+              <div class="species-tag" id="speciesTag">—</div>
+            </div>
+          </div>
+
+          <div class="confidence-row">
+            <div class="confidence-label"><span>Confidence</span><span id="confPct">0%</span></div>
+            <div class="meter"><div class="meter-fill" id="meterFill"></div></div>
+          </div>
+
+          <div class="split-row">
+            <div class="split-item">
+              <div class="k">P(cat)</div>
+              <div class="v" id="probCat">—</div>
+            </div>
+            <div class="split-item">
+              <div class="k">P(dog)</div>
+              <div class="v" id="probDog">—</div>
+            </div>
+          </div>
+
+          <div class="ticket-footer">
+            <span id="inferTime">0.0ms inference</span>
+            <span>128×128 · CNN-scratch-v1</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <footer>Built for the Barakode AI Engineering Roadmap · Week 1 custom CNN</footer>
+</div>
+
+<script>
+const dropzone = document.getElementById('dropzone');
+const dropzoneEmpty = document.getElementById('dropzoneEmpty');
+const previewWrap = document.getElementById('previewWrap');
+const previewImg = document.getElementById('previewImg');
+const scanline = document.getElementById('scanline');
+const fileInput = document.getElementById('fileInput');
+const rescanBtn = document.getElementById('rescanBtn');
+
+const ticketEmpty = document.getElementById('ticketEmpty');
+const ticketResult = document.getElementById('ticketResult');
+const speciesTag = document.getElementById('speciesTag');
+const ticketId = document.getElementById('ticketId');
+const confPct = document.getElementById('confPct');
+const meterFill = document.getElementById('meterFill');
+const probCat = document.getElementById('probCat');
+const probDog = document.getElementById('probDog');
+const inferTime = document.getElementById('inferTime');
+
+dropzone.addEventListener('click', () => { if (!previewWrap.classList.contains('active')) fileInput.click(); });
+
+['dragover', 'dragenter'].forEach(evt =>
+  dropzone.addEventListener(evt, e => { e.preventDefault(); dropzone.classList.add('dragover'); })
+);
+['dragleave', 'drop'].forEach(evt =>
+  dropzone.addEventListener(evt, e => { e.preventDefault(); dropzone.classList.remove('dragover'); })
+);
+dropzone.addEventListener('drop', e => {
+  const file = e.dataTransfer.files[0];
+  if (file) handleFile(file);
+});
+
+fileInput.addEventListener('change', () => {
+  if (fileInput.files[0]) handleFile(fileInput.files[0]);
+});
+
+rescanBtn.addEventListener('click', () => {
+  fileInput.value = '';
+  previewWrap.classList.remove('active');
+  dropzoneEmpty.style.display = 'flex';
+  rescanBtn.style.display = 'none';
+  ticketResult.classList.remove('active');
+  ticketEmpty.style.display = 'flex';
+});
+
+function handleFile(file) {
+  const url = URL.createObjectURL(file);
+  previewImg.src = url;
+  dropzoneEmpty.style.display = 'none';
+  previewWrap.classList.add('active');
+  rescanBtn.style.display = 'inline-block';
+  rescanBtn.disabled = true;
+
+  ticketEmpty.style.display = 'flex';
+  ticketResult.classList.remove('active');
+
+  scanline.classList.add('active');
+
+  const formData = new FormData();
+  formData.append('image', file);
+
+  fetch('/predict', { method: 'POST', body: formData })
+    .then(r => r.json())
+    .then(data => {
+      scanline.classList.remove('active');
+      rescanBtn.disabled = false;
+
+      if (data.error) {
+        ticketEmpty.querySelector('p').innerHTML = 'Scan failed:<br>' + data.error;
+        ticketEmpty.style.display = 'flex';
+        return;
+      }
+
+      renderTicket(data);
+    })
+    .catch(err => {
+      scanline.classList.remove('active');
+      rescanBtn.disabled = false;
+      ticketEmpty.querySelector('p').innerHTML = 'Could not reach the scanner.<br>Is the server running?';
+      ticketEmpty.style.display = 'flex';
+    });
+}
+
+function renderTicket(data) {
+  ticketEmpty.style.display = 'none';
+  ticketResult.classList.add('active');
+
+  const isDog = data.label === 'Dog';
+  speciesTag.textContent = data.label;
+  speciesTag.className = 'species-tag ' + (isDog ? 'dog' : 'cat');
+
+  ticketId.textContent = 'SCAN #' + Math.floor(100000 + Math.random() * 900000);
+
+  confPct.textContent = data.confidence + '%';
+  meterFill.style.width = data.confidence + '%';
+  meterFill.style.background = isDog ? 'var(--coral)' : 'var(--teal)';
+
+  probCat.textContent = data.prob_cat + '%';
+  probDog.textContent = data.prob_dog + '%';
+
+  inferTime.textContent = data.inference_ms + 'ms inference';
+}
+</script>
+</body>
+</html>
