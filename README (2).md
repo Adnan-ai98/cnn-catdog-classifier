@@ -5,7 +5,7 @@ A convolutional neural network built and trained **from scratch** (no pretrained
 > Part of the \[Barakode AI Engineering Roadmap](#) — Week 1: \*"Develop custom CNN architectures for image tasks."\*
 
 Add a screenshot of the PawScan interface here once you have one:
-[PawScan interface](screenshots/pawscan-demo.png)
+[PawScan interface](screenshots/pawscan-demo.png.png)
 
 ## Results
 
