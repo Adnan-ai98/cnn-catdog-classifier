@@ -1,4 +1,4 @@
-# 🐾 CatDogCNN — Cat vs Dog Classifier (From Scratch)
+# 🐾 CatDog Vision — CNN-Based Image Classification System
 
 A convolutional neural network built and trained **from scratch** (no pretrained weights) to classify images as cat or dog — plus a Flask web interface (**PawScan**) for live predictions.
 
